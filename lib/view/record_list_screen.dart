@@ -1,178 +1,210 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../../core/theme/app_theme.dart';
-import '../providers/health_record_provider.dart';
-import '../widgets/record_tile.dart';
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
+import '../controllers/health_controller.dart';
+import '../models/health_record.dart';
+import '../widgets/banner_image.dart';
+import 'record_form_screen.dart';
 
-class RecordListScreen extends StatelessWidget {
+class RecordListScreen extends StatefulWidget {
   const RecordListScreen({super.key});
 
-  Future<void> _pickDate(BuildContext context) async {
-    final provider = context.read<HealthRecordProvider>();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      provider.setSearchDate(HealthRecordProvider.formatDate(picked));
-    }
+  @override
+  State<RecordListScreen> createState() => _RecordListScreenState();
+}
+
+class _RecordListScreenState extends State<RecordListScreen> {
+  final _controller = HealthController();
+
+  List<HealthRecord> _allRecords = []; // used for the calendar dots
+  List<HealthRecord> _records = []; // the list shown under the calendar
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _filterDate;
+  CalendarFormat _format = CalendarFormat.twoWeeks;
+  bool _isLoading = true;
+
+  String _fmt(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecords();
   }
 
-  Future<void> _confirmDelete(BuildContext context, int id) async {
-    final provider = context.read<HealthRecordProvider>();
-    final confirmed = await showDialog<bool>(
+  Future<void> _loadRecords() async {
+    setState(() => _isLoading = true);
+
+    final all = await _controller.getAllRecords();
+    final shown = _filterDate == null
+        ? all
+        : await _controller.getRecordsByDate(_fmt(_filterDate!));
+
+    if (!mounted) return;
+    setState(() {
+      _allRecords = all;
+      _records = shown;
+      _isLoading = false;
+    });
+  }
+
+  List<HealthRecord> _recordsForDay(DateTime day) {
+    final key = _fmt(day);
+    return _allRecords.where((r) => r.date == key).toList();
+  }
+
+  Future<void> _editRecord(HealthRecord record) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordFormScreen(record: record),
+      ),
+    );
+    if (changed == true) await _loadRecords();
+  }
+
+  Future<void> _deleteRecord(HealthRecord record) async {
+    final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      builder: (context) => AlertDialog(
         title: const Text('Delete record?'),
-        content: const Text('This cannot be undone.'),
+        content: const Text('This action cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: AppColors.calories),
-            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
-    if (confirmed == true) {
-      provider.deleteRecord(id);
+
+    if (confirm == true && record.id != null) {
+      await _controller.deleteRecord(record.id!);
+      await _loadRecords();
     }
+  }
+
+  Widget _recordCard(HealthRecord record) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: ListTile(
+        title: Text(DateFormat('dd MMM yyyy')
+            .format(DateTime.parse(record.date))),
+        subtitle: Text(
+          'Steps: ${record.steps} | '
+          'Calories: ${record.calories} kcal | '
+          'Water: ${record.waterMl} ml',
+        ),
+        isThreeLine: true,
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'edit') _editRecord(record);
+            if (value == 'delete') _deleteRecord(record);
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'edit', child: Text('Edit')),
+            PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<HealthRecordProvider>();
-    final records = provider.records;
-    final searching = provider.searchDate.isNotEmpty;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Health Records',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textDark,
-          ),
-        ),
-        centerTitle: false,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-      ),
-      body: Column(
+      appBar: AppBar(title: const Text('Health History')),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
         children: [
-          // Search bar
+          const BannerImage(asset: 'images/history.jpg', height: 110),
+          const SizedBox(height: 8),
+          Card(
+            child: TableCalendar<HealthRecord>(
+              firstDay: DateTime(2020),
+              lastDay: DateTime.now().add(const Duration(days: 30)),
+              focusedDay: _focusedDay,
+              calendarFormat: _format,
+              availableCalendarFormats: const {
+                CalendarFormat.month: 'Month',
+                CalendarFormat.twoWeeks: '2 weeks',
+                CalendarFormat.week: 'Week',
+              },
+              selectedDayPredicate: (day) =>
+                  _filterDate != null && isSameDay(day, _filterDate),
+              eventLoader: _recordsForDay,
+              headerStyle: const HeaderStyle(titleCentered: true),
+              calendarStyle: const CalendarStyle(
+                markerDecoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              onDaySelected: (selectedDay, focusedDay) {
+                setState(() {
+                  _filterDate = selectedDay;
+                  _focusedDay = focusedDay;
+                });
+                _loadRecords();
+              },
+              onFormatChanged: (format) {
+                setState(() => _format = format);
+              },
+              onPageChanged: (focusedDay) {
+                _focusedDay = focusedDay;
+              },
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Expanded(
-                  child: Material(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    elevation: 1,
-                    shadowColor: Colors.black26,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () => _pickDate(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.search_rounded,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              searching
-                                  ? provider.searchDate
-                                  : 'Search by date',
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: searching
-                                    ? AppColors.textDark
-                                    : AppColors.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  child: Text(
+                    _filterDate == null
+                        ? 'Showing all records (tap a day to filter)'
+                        : 'Records for ${DateFormat('dd MMM yyyy').format(_filterDate!)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
-                if (searching)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: IconButton.filledTonal(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => provider.setSearchDate(''),
-                    ),
+                if (_filterDate != null)
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() => _filterDate = null);
+                      _loadRecords();
+                    },
+                    icon: const Icon(Icons.clear),
+                    label: const Text('Show all'),
                   ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 10),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${records.length} record${records.length == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textMuted,
-                ),
+          if (_isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
               ),
-            ),
-          ),
-
-          // List
-          Expanded(
-            child: records.isEmpty
-                ? const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.event_busy_rounded,
-                          size: 64,
-                          color: AppColors.textMuted,
-                        ),
-                        SizedBox(height: 12),
-                        Text(
-                          'No records found',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 100),
-                    itemCount: records.length,
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      return RecordTile(
-                        record: record,
-                        onDelete: () => _confirmDelete(context, record.id!),
-                      );
-                    },
+            )
+          else if (_records.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 200,
+                    child: BannerImage(asset: 'images/image.jpg', height: 120),
                   ),
-          ),
+                  SizedBox(height: 12),
+                  Text('No health records found.'),
+                ],
+              ),
+            )
+          else
+            ..._records.map(_recordCard),
         ],
       ),
     );

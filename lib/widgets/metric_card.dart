@@ -1,98 +1,81 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
 
-class SummaryCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
+class MetricCard extends StatelessWidget {
+  final String title;
   final String value;
-  final String goalText;
-  final double progress; // 0.0 to 1.0
+  final String unit;
+  final IconData icon;
   final Color color;
+  final int? goal; // optional daily goal
+  final int current; // today's number, used for the goal bar
 
-  const SummaryCard({
+  const MetricCard({
     super.key,
-    required this.icon,
-    required this.label,
+    required this.title,
     required this.value,
-    required this.goalText,
-    required this.progress,
-    required this.color,
+    required this.unit,
+    required this.icon,
+    this.color = Colors.green,
+    this.goal,
+    this.current = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: AppStyles.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: color.withAlpha(30),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: color, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textMuted,
+    final hasGoal = goal != null && goal! > 0;
+    final progress = hasGoal ? (current / goal!).clamp(0.0, 1.0).toDouble() : 0.0;
+    final reached = hasGoal && current >= goal!;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, size: 32, color: color),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title),
+                  const SizedBox(height: 5),
+                  Text(
+                    '$value $unit',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (hasGoal) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 8,
+                        color: color,
+                        backgroundColor: color.withValues(alpha: 0.15),
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textDark,
+                      reached
+                          ? 'Goal reached – well done!'
+                          : 'Goal: $goal $unit',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: reached ? color : Colors.black54,
+                        fontWeight:
+                            reached ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
-              Text(
-                '${(progress * 100).round()}%',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 8,
-              backgroundColor: color.withAlpha(30),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            goalText,
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-          ),
-        ],
+            if (reached) Icon(Icons.check_circle, color: color),
+          ],
+        ),
       ),
     );
   }

@@ -1,22 +1,47 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:intl/intl.dart';
+import '../controllers/health_controller.dart';
 import '../models/health_record.dart';
-import '../providers/health_record_provider.dart';
+import '../widgets/banner_image.dart';
 
-class AddRecordScreen extends StatefulWidget {
-  const AddRecordScreen({super.key});
+class RecordFormScreen extends StatefulWidget {
+  final HealthRecord? record;
+
+  const RecordFormScreen({super.key, this.record});
 
   @override
-  State<AddRecordScreen> createState() => _AddRecordScreenState();
+  State<RecordFormScreen> createState() => _RecordFormScreenState();
 }
 
-class _AddRecordScreenState extends State<AddRecordScreen> {
+class _RecordFormScreenState extends State<RecordFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _stepsController = TextEditingController();
-  final _caloriesController = TextEditingController();
-  final _waterController = TextEditingController();
-  DateTime _selectedDate = DateTime.now();
+  final _controller = HealthController();
+
+  late final TextEditingController _stepsController;
+  late final TextEditingController _caloriesController;
+  late final TextEditingController _waterController;
+
+  late DateTime _selectedDate;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final record = widget.record;
+    _selectedDate = record == null
+        ? DateTime.now()
+        : DateTime.parse(record.date);
+
+    _stepsController = TextEditingController(
+      text: record?.steps.toString() ?? '',
+    );
+    _caloriesController = TextEditingController(
+      text: record?.calories.toString() ?? '',
+    );
+    _waterController = TextEditingController(
+      text: record?.waterMl.toString() ?? '',
+    );
+  }
 
   @override
   void dispose() {
@@ -25,6 +50,8 @@ class _AddRecordScreenState extends State<AddRecordScreen> {
     _waterController.dispose();
     super.dispose();
   }
+
+  String get _dateValue => DateFormat('yyyy-MM-dd').format(_selectedDate);
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -38,217 +65,108 @@ class _AddRecordScreenState extends State<AddRecordScreen> {
     }
   }
 
-  String? _validateNumber(String? value, String name, int max) {
+  Future<void> _saveRecord() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSaving = true);
+
+    final record = HealthRecord(
+      id: widget.record?.id,
+      date: _dateValue,
+      steps: int.parse(_stepsController.text.trim()),
+      calories: int.parse(_caloriesController.text.trim()),
+      waterMl: int.parse(_waterController.text.trim()),
+    );
+
+    try {
+      if (widget.record == null) {
+        await _controller.addRecord(record);
+      } else {
+        await _controller.updateRecord(record);
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save record: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  String? _validateNumber(String? value, String field) {
     if (value == null || value.trim().isEmpty) {
-      return 'Please enter $name';
+      return 'Enter $field';
     }
     final number = int.tryParse(value.trim());
-    if (number == null) {
-      return 'Enter a whole number';
-    }
-    if (number < 0) {
-      return '$name cannot be negative';
-    }
-    if (number > max) {
-      return '$name looks too high (max $max)';
+    if (number == null || number < 0) {
+      return 'Enter a valid non-negative whole number';
     }
     return null;
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-
-    final record = HealthRecord(
-      date: HealthRecordProvider.formatDate(_selectedDate),
-      steps: int.parse(_stepsController.text.trim()),
-      calories: int.parse(_caloriesController.text.trim()),
-      water: int.parse(_waterController.text.trim()),
-    );
-
-    context.read<HealthRecordProvider>().addRecord(record);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.primary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        content: const Text('Record added'),
-      ),
-    );
-    Navigator.pop(context);
-  }
-
-  InputDecoration _decoration({
-    required String label,
-    required String hint,
-    required IconData icon,
-    required Color color,
-    required String suffix,
-  }) {
-    OutlineInputBorder border(Color c, double width) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: c, width: width),
-        );
-
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      suffixText: suffix,
-      prefixIcon: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: color.withAlpha(30),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: color, size: 18),
-        ),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      border: border(const Color(0xFFE5E7EB), 1),
-      enabledBorder: border(const Color(0xFFE5E7EB), 1),
-      focusedBorder: border(color, 2),
-      errorBorder: border(AppColors.calories, 1),
-      focusedErrorBorder: border(AppColors.calories, 2),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.record != null;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Add Record',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textDark,
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
+        title: Text(isEditing ? 'Edit Health Record' : 'Add Health Record'),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text(
-              'Log your daily activity',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              BannerImage(
+                asset: isEditing ? 'images/image.jpg' : 'images/addrecord.jpg',
               ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Fill in the details below and save.',
-              style: TextStyle(fontSize: 14, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 22),
-
-            // Date selector
-            Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
+              const SizedBox(height: 12),
+              ListTile(
+                title: const Text('Record date'),
+                subtitle: Text(DateFormat('dd MMM yyyy').format(_selectedDate)),
+                trailing: const Icon(Icons.calendar_month),
                 onTap: _pickDate,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.calendar_month_rounded,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        HealthRecordProvider.formatDate(_selectedDate),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      const Spacer(),
-                      const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.textMuted,
-                      ),
-                    ],
-                  ),
+              ),
+              TextFormField(
+                controller: _stepsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Steps walked',
+                  prefixIcon: Icon(Icons.directions_walk, color: Colors.green),
                 ),
+                validator: (v) => _validateNumber(v, 'steps'),
               ),
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _stepsController,
-              keyboardType: TextInputType.number,
-              decoration: _decoration(
-                label: 'Steps walked',
-                hint: 'e.g. 7850',
-                icon: Icons.directions_walk_rounded,
-                color: AppColors.steps,
-                suffix: 'steps',
-              ),
-              validator: (v) => _validateNumber(v, 'Steps', 100000),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _caloriesController,
-              keyboardType: TextInputType.number,
-              decoration: _decoration(
-                label: 'Calories burned',
-                hint: 'e.g. 420',
-                icon: Icons.local_fire_department_rounded,
-                color: AppColors.calories,
-                suffix: 'kcal',
-              ),
-              validator: (v) => _validateNumber(v, 'Calories', 10000),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _waterController,
-              keyboardType: TextInputType.number,
-              decoration: _decoration(
-                label: 'Water intake',
-                hint: 'e.g. 2000',
-                icon: Icons.water_drop_rounded,
-                color: AppColors.water,
-                suffix: 'ml',
-              ),
-              validator: (v) => _validateNumber(v, 'Water', 10000),
-            ),
-            const SizedBox(height: 28),
-
-            FilledButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.check_rounded),
-              label: const Text(
-                'Save Record',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                minimumSize: const Size.fromHeight(54),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+              TextFormField(
+                controller: _caloriesController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Calories burned (kcal)',
+                  prefixIcon:
+                      Icon(Icons.local_fire_department, color: Colors.red),
                 ),
+                validator: (v) => _validateNumber(v, 'calories'),
               ),
-            ),
-          ],
+              TextFormField(
+                controller: _waterController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Water intake (ml)',
+                  prefixIcon: Icon(Icons.water_drop, color: Colors.blue),
+                ),
+                validator: (v) => _validateNumber(v, 'water intake'),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _isSaving ? null : _saveRecord,
+                child: Text(_isSaving ? 'Saving...' : 'Save Record'),
+              ),
+            ],
+          ),
         ),
       ),
     );

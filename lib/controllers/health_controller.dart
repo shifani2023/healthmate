@@ -1,75 +1,73 @@
-import 'package:flutter/foundation.dart';
+import '../database/database_helper.dart';
+import '../models/daily_total.dart';
 import '../models/health_record.dart';
 
-class HealthRecordProvider extends ChangeNotifier {
-  final List<HealthRecord> _records = [];
-  int _nextId = 1;
-  String _searchDate = '';
+class HealthController {
+  final DatabaseHelper _db = DatabaseHelper.instance;
 
-  HealthRecordProvider() {
-    _loadDummyData();
+  String _fmt(DateTime d) {
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
   }
 
-  static String formatDate(DateTime d) {
-    final month = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$month-$day';
+  Future<int> addRecord(HealthRecord record) async {
+    return _db.insertRecord(record.toMap());
   }
 
-  void _loadDummyData() {
-    final now = DateTime.now();
-    const steps = [7850, 6200, 9100, 4300, 10250];
-    const calories = [420, 350, 510, 240, 600];
-    const water = [2000, 1500, 2500, 1200, 2800];
-    for (int i = 0; i < 5; i++) {
-      _records.add(HealthRecord(
-        id: _nextId++,
-        date: formatDate(now.subtract(Duration(days: i))),
-        steps: steps[i],
-        calories: calories[i],
-        water: water[i],
+  Future<List<HealthRecord>> getAllRecords() async {
+    final rows = await _db.getAllRecords();
+    return rows.map((row) => HealthRecord.fromMap(row)).toList();
+  }
+
+  Future<int> updateRecord(HealthRecord record) async {
+    if (record.id == null) {
+      throw ArgumentError('A record ID is required for updating.');
+    }
+    return _db.updateRecord(record.id!, record.toMap());
+  }
+
+  Future<int> deleteRecord(int id) async {
+    return _db.deleteRecord(id);
+  }
+
+  Future<List<HealthRecord>> getRecordsByDate(String date) async {
+    final rows = await _db.getRecordsByDate(date);
+    return rows.map((row) => HealthRecord.fromMap(row)).toList();
+  }
+
+  Future<List<HealthRecord>> getTodayRecords() async {
+    return getRecordsByDate(_fmt(DateTime.now()));
+  }
+
+  // Totals for each of the last 7 days (oldest first, today last).
+  Future<List<DailyTotal>> getWeekTotals() async {
+    final all = await getAllRecords();
+    final today = DateTime.now();
+    final List<DailyTotal> week = [];
+
+    for (int i = 6; i >= 0; i--) {
+      final day = DateTime(today.year, today.month, today.day - i);
+      final key = _fmt(day);
+      final dayRecords = all.where((r) => r.date == key);
+      week.add(DailyTotal(
+        date: day,
+        steps: dayRecords.fold(0, (sum, r) => sum + r.steps),
+        calories: dayRecords.fold(0, (sum, r) => sum + r.calories),
+        waterMl: dayRecords.fold(0, (sum, r) => sum + r.waterMl),
       ));
     }
+    return week;
   }
 
-  String get searchDate => _searchDate;
-
-  // Records filtered by the search date, newest first
-  List<HealthRecord> get records {
-    final list = _searchDate.isEmpty
-        ? List<HealthRecord>.from(_records)
-        : _records.where((r) => r.date == _searchDate).toList();
-    list.sort((a, b) => b.date.compareTo(a.date));
-    return list;
-  }
-
-  Iterable<HealthRecord> get _todayRecords {
-    final today = formatDate(DateTime.now());
-    return _records.where((r) => r.date == today);
-  }
-
-  int get todaySteps => _todayRecords.fold(0, (sum, r) => sum + r.steps);
-  int get todayCalories => _todayRecords.fold(0, (sum, r) => sum + r.calories);
-  int get todayWater => _todayRecords.fold(0, (sum, r) => sum + r.water);
-
-  void setSearchDate(String date) {
-    _searchDate = date;
-    notifyListeners();
-  }
-
-  void addRecord(HealthRecord record) {
-    _records.add(HealthRecord(
-      id: _nextId++,
-      date: record.date,
-      steps: record.steps,
-      calories: record.calories,
-      water: record.water,
-    ));
-    notifyListeners();
-  }
-
-  void deleteRecord(int id) {
-    _records.removeWhere((r) => r.id == id);
-    notifyListeners();
+  // High score: the most steps walked in a single day, ever.
+  Future<int> getBestDaySteps() async {
+    final all = await getAllRecords();
+    final Map<String, int> totals = {};
+    for (final r in all) {
+      totals[r.date] = (totals[r.date] ?? 0) + r.steps;
+    }
+    if (totals.isEmpty) return 0;
+    return totals.values.reduce((a, b) => a > b ? a : b);
   }
 }
