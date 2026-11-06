@@ -3,7 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../controllers/health_controller.dart';
 import '../models/health_record.dart';
-import '../widgets/banner_image.dart';
+import '../widgets/background_image.dart';
+import 'record_detail_screen.dart';
 import 'record_form_screen.dart';
 
 class RecordListScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _filterDate;
   CalendarFormat _format = CalendarFormat.twoWeeks;
+  bool _newestFirst = true;
   bool _isLoading = true;
 
   String _fmt(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
@@ -31,20 +33,41 @@ class _RecordListScreenState extends State<RecordListScreen> {
     _loadRecords();
   }
 
+  // Sort by date, then by id (newest first or oldest first)
+  List<HealthRecord> _sorted(List<HealthRecord> list) {
+    final copy = List<HealthRecord>.from(list);
+    copy.sort((a, b) {
+      final byDate = a.date.compareTo(b.date);
+      final result = byDate != 0 ? byDate : (a.id ?? 0).compareTo(b.id ?? 0);
+      return _newestFirst ? -result : result;
+    });
+    return copy;
+  }
+
   Future<void> _loadRecords() async {
     setState(() => _isLoading = true);
 
-    final all = await _controller.getAllRecords();
-    final shown = _filterDate == null
-        ? all
-        : await _controller.getRecordsByDate(_fmt(_filterDate!));
+    try {
+      final all = await _controller.getAllRecords();
+      final shown = _filterDate == null
+          ? all
+          : await _controller.getRecordsByDate(_fmt(_filterDate!));
 
-    if (!mounted) return;
-    setState(() {
-      _allRecords = all;
-      _records = shown;
-      _isLoading = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        _allRecords = all;
+        _records = _sorted(shown);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sorry, we could not load the records. Please try again. ($e)'),
+        ),
+      );
+    }
   }
 
   List<HealthRecord> _recordsForDay(DateTime day) {
@@ -60,6 +83,15 @@ class _RecordListScreenState extends State<RecordListScreen> {
       ),
     );
     if (changed == true) await _loadRecords();
+  }
+
+  void _openDetails(HealthRecord record) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordDetailScreen(record: record),
+      ),
+    );
   }
 
   Future<void> _deleteRecord(HealthRecord record) async {
@@ -82,8 +114,19 @@ class _RecordListScreenState extends State<RecordListScreen> {
     );
 
     if (confirm == true && record.id != null) {
-      await _controller.deleteRecord(record.id!);
-      await _loadRecords();
+      try {
+        await _controller.deleteRecord(record.id!);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Record deleted')),
+        );
+        await _loadRecords();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete record: $e')),
+        );
+      }
     }
   }
 
@@ -91,6 +134,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 5),
       child: ListTile(
+        onTap: () => _openDetails(record),
         title: Text(DateFormat('dd MMM yyyy')
             .format(DateTime.parse(record.date))),
         subtitle: Text(
@@ -115,97 +159,115 @@ class _RecordListScreenState extends State<RecordListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Health History')),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          const BannerImage(asset: 'images/history.jpg', height: 110),
-          const SizedBox(height: 8),
-          Card(
-            child: TableCalendar<HealthRecord>(
-              firstDay: DateTime(2020),
-              lastDay: DateTime.now().add(const Duration(days: 30)),
-              focusedDay: _focusedDay,
-              calendarFormat: _format,
-              availableCalendarFormats: const {
-                CalendarFormat.month: 'Month',
-                CalendarFormat.twoWeeks: '2 weeks',
-                CalendarFormat.week: 'Week',
-              },
-              selectedDayPredicate: (day) =>
-                  _filterDate != null && isSameDay(day, _filterDate),
-              eventLoader: _recordsForDay,
-              headerStyle: const HeaderStyle(titleCentered: true),
-              calendarStyle: const CalendarStyle(
-                markerDecoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
+    return BackgroundImage(
+      asset: 'images/history.jpg',
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: const Text('Health History'),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            Card(
+              child: TableCalendar<HealthRecord>(
+                firstDay: DateTime(2020),
+                lastDay: DateTime.now().add(const Duration(days: 30)),
+                focusedDay: _focusedDay,
+                calendarFormat: _format,
+                availableCalendarFormats: const {
+                  CalendarFormat.month: 'Month',
+                  CalendarFormat.twoWeeks: '2 weeks',
+                  CalendarFormat.week: 'Week',
+                },
+                selectedDayPredicate: (day) =>
+                    _filterDate != null && isSameDay(day, _filterDate),
+                eventLoader: _recordsForDay,
+                headerStyle: const HeaderStyle(titleCentered: true),
+                calendarStyle: const CalendarStyle(
+                  markerDecoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-              onDaySelected: (selectedDay, focusedDay) {
-                setState(() {
-                  _filterDate = selectedDay;
+                onDaySelected: (selectedDay, focusedDay) {
+                  setState(() {
+                    _filterDate = selectedDay;
+                    _focusedDay = focusedDay;
+                  });
+                  _loadRecords();
+                },
+                onFormatChanged: (format) {
+                  setState(() => _format = format);
+                },
+                onPageChanged: (focusedDay) {
                   _focusedDay = focusedDay;
-                });
-                _loadRecords();
-              },
-              onFormatChanged: (format) {
-                setState(() => _format = format);
-              },
-              onPageChanged: (focusedDay) {
-                _focusedDay = focusedDay;
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _filterDate == null
-                        ? 'Showing all records (tap a day to filter)'
-                        : 'Records for ${DateFormat('dd MMM yyyy').format(_filterDate!)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (_filterDate != null)
-                  TextButton.icon(
-                    onPressed: () {
-                      setState(() => _filterDate = null);
-                      _loadRecords();
-                    },
-                    icon: const Icon(Icons.clear),
-                    label: const Text('Show all'),
-                  ),
-              ],
-            ),
-          ),
-          if (_isLoading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(),
+                },
               ),
-            )
-          else if (_records.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Column(
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
                 children: [
-                  SizedBox(
-                    width: 200,
-                    child: BannerImage(asset: 'images/image.jpg', height: 120),
+                  Expanded(
+                    child: Text(
+                      _filterDate == null
+                          ? 'Showing all records (tap a day to filter)'
+                          : 'Records for ${DateFormat('dd MMM yyyy').format(_filterDate!)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
-                  SizedBox(height: 12),
-                  Text('No health records found.'),
+                  if (_filterDate != null)
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() => _filterDate = null);
+                        _loadRecords();
+                      },
+                      icon: const Icon(Icons.clear),
+                      label: const Text('Show all'),
+                    ),
                 ],
               ),
-            )
-          else
-            ..._records.map(_recordCard),
-        ],
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _newestFirst = !_newestFirst;
+                    _records = _sorted(_records);
+                  });
+                },
+                icon: Icon(
+                    _newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
+                label: Text(_newestFirst ? 'Newest first' : 'Oldest first'),
+              ),
+            ),
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_records.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    Icon(Icons.event_busy, size: 48, color: Colors.black45),
+                    SizedBox(height: 12),
+                    Text('No health records found.'),
+                  ],
+                ),
+              )
+            else
+              ..._records.map(_recordCard),
+          ],
+        ),
       ),
     );
   }

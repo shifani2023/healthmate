@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import '../controllers/health_controller.dart';
 import '../models/daily_total.dart';
 import '../models/health_record.dart';
-import '../widgets/banner_image.dart';
+import '../widgets/background_image.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/weekly_chart.dart';
 import 'record_form_screen.dart';
@@ -42,16 +42,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadToday() async {
-    final records = await _controller.getTodayRecords();
-    final week = await _controller.getWeekTotals();
-    final best = await _controller.getBestDaySteps();
-    if (!mounted) return;
-    setState(() {
-      _todayRecords = records;
-      _week = week;
-      _bestSteps = best;
-      _isLoading = false;
-    });
+    try {
+      final records = await _controller.getTodayRecords();
+      final week = await _controller.getWeekTotals();
+      final best = await _controller.getBestDaySteps();
+      if (!mounted) return;
+      setState(() {
+        _todayRecords = records;
+        _week = week;
+        _bestSteps = best;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sorry, we could not load your data. Please try again. ($e)'),
+        ),
+      );
+    }
   }
 
   Future<void> _openAddForm() async {
@@ -134,80 +144,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final todayLabel = DateFormat('dd MMMM yyyy').format(DateTime.now());
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('HealthMate'),
-        actions: [
-          IconButton(
-            onPressed: _openHistory,
-            icon: const Icon(Icons.history),
-            tooltip: 'History',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadToday,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  const BannerImage(asset: 'images/dashboard.jpg'),
-                  const SizedBox(height: 16),
-                  Text('Today – $todayLabel',
-                      style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  ..._buildMessages(),
-                  MetricCard(
-                    title: 'Steps walked',
-                    value: _steps.toString(),
-                    unit: 'steps',
-                    icon: Icons.directions_walk,
-                    color: Colors.green,
-                    goal: stepsGoal,
-                    current: _steps,
-                  ),
-                  MetricCard(
-                    title: 'Calories burned',
-                    value: _calories.toString(),
-                    unit: 'kcal',
-                    icon: Icons.local_fire_department,
-                    color: Colors.red,
-                    goal: caloriesGoal,
-                    current: _calories,
-                  ),
-                  MetricCard(
-                    title: 'Water intake',
-                    value: _water.toString(),
-                    unit: 'ml',
-                    icon: Icons.water_drop,
-                    color: Colors.blue,
-                    goal: waterGoal,
-                    current: _water,
-                  ),
-                  const SizedBox(height: 8),
-                  _highScore(),
-                  WeeklyChart(days: _week),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Goals are set by you and are not medical advice.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _openAddForm,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Health Record'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _openHistory,
-                    icon: const Icon(Icons.calendar_month),
-                    label: const Text('View Previous Records'),
-                  ),
-                ],
-              ),
+    return BackgroundImage(
+      asset: 'images/dashboard.jpg',
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: const Text('HealthMate'),
+          actions: [
+            IconButton(
+              onPressed: _openHistory,
+              icon: const Icon(Icons.history),
+              tooltip: 'History',
             ),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadToday,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Text('Today – $todayLabel',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    ..._buildMessages(),
+                    MetricCard(
+                      title: 'Steps walked',
+                      value: _steps.toString(),
+                      unit: 'steps',
+                      icon: Icons.directions_walk,
+                      color: Colors.green,
+                      goal: stepsGoal,
+                      current: _steps,
+                    ),
+                    MetricCard(
+                      title: 'Calories burned',
+                      value: _calories.toString(),
+                      unit: 'kcal',
+                      icon: Icons.local_fire_department,
+                      color: Colors.red,
+                      goal: caloriesGoal,
+                      current: _calories,
+                    ),
+                    MetricCard(
+                      title: 'Water intake',
+                      value: _water.toString(),
+                      unit: 'ml',
+                      icon: Icons.water_drop,
+                      color: Colors.blue,
+                      goal: waterGoal,
+                      current: _water,
+                    ),
+                    const SizedBox(height: 8),
+                    _highScore(),
+                    WeeklyChart(days: _week),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Goals are set by you and are not medical advice.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _openAddForm,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Health Record'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _openHistory,
+                      icon: const Icon(Icons.calendar_month),
+                      label: const Text('View Previous Records'),
+                    ),
+                  ],
+                ),
+              ),
+      ),
     );
   }
 }

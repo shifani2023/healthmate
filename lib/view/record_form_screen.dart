@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../controllers/health_controller.dart';
 import '../models/health_record.dart';
-import '../widgets/banner_image.dart';
+import '../widgets/background_image.dart';
 
 class RecordFormScreen extends StatefulWidget {
   final HealthRecord? record;
@@ -70,6 +70,8 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
 
     setState(() => _isSaving = true);
 
+    final isEditing = widget.record != null;
+
     final record = HealthRecord(
       id: widget.record?.id,
       date: _dateValue,
@@ -79,13 +81,20 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
     );
 
     try {
-      if (widget.record == null) {
-        await _controller.addRecord(record);
-      } else {
+      if (isEditing) {
         await _controller.updateRecord(record);
+      } else {
+        await _controller.addRecord(record);
       }
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isEditing
+              ? 'Record updated successfully'
+              : 'Record added successfully'),
+        ),
+      );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -112,60 +121,74 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   Widget build(BuildContext context) {
     final isEditing = widget.record != null;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isEditing ? 'Edit Health Record' : 'Add Health Record'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              BannerImage(
-                asset: isEditing ? 'images/image.jpg' : 'images/addrecord.jpg',
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                title: const Text('Record date'),
-                subtitle: Text(DateFormat('dd MMM yyyy').format(_selectedDate)),
-                trailing: const Icon(Icons.calendar_month),
-                onTap: _pickDate,
-              ),
-              TextFormField(
-                controller: _stepsController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Steps walked',
-                  prefixIcon: Icon(Icons.directions_walk, color: Colors.green),
+    return BackgroundImage(
+      asset: isEditing ? 'images/image.jpg' : 'images/addrecord.jpg',
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: Text(isEditing ? 'Edit Health Record' : 'Add Health Record'),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              children: [
+                ListTile(
+                  title: const Text('Record date'),
+                  subtitle:
+                      Text(DateFormat('dd MMM yyyy').format(_selectedDate)),
+                  // No calendar icon and no tapping when editing
+                  trailing: isEditing ? null : const Icon(Icons.calendar_month),
+                  onTap: isEditing ? null : _pickDate,
                 ),
-                validator: (v) => _validateNumber(v, 'steps'),
-              ),
-              TextFormField(
-                controller: _caloriesController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Calories burned (kcal)',
-                  prefixIcon:
-                      Icon(Icons.local_fire_department, color: Colors.red),
+                if (isEditing)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 16, bottom: 8),
+                    child: Text(
+                      "The date can't be changed while editing.",
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                TextFormField(
+                  controller: _stepsController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Steps walked',
+                    prefixIcon:
+                        Icon(Icons.directions_walk, color: Colors.green),
+                  ),
+                  validator: (v) => _validateNumber(v, 'steps'),
                 ),
-                validator: (v) => _validateNumber(v, 'calories'),
-              ),
-              TextFormField(
-                controller: _waterController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Water intake (ml)',
-                  prefixIcon: Icon(Icons.water_drop, color: Colors.blue),
+                TextFormField(
+                  controller: _caloriesController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Calories burned (kcal)',
+                    prefixIcon:
+                        Icon(Icons.local_fire_department, color: Colors.red),
+                  ),
+                  validator: (v) => _validateNumber(v, 'calories'),
                 ),
-                validator: (v) => _validateNumber(v, 'water intake'),
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _isSaving ? null : _saveRecord,
-                child: Text(_isSaving ? 'Saving...' : 'Save Record'),
-              ),
-            ],
+                TextFormField(
+                  controller: _waterController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Water intake (ml)',
+                    prefixIcon: Icon(Icons.water_drop, color: Colors.blue),
+                  ),
+                  validator: (v) => _validateNumber(v, 'water intake'),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: _isSaving ? null : _saveRecord,
+                  child: Text(_isSaving ? 'Saving...' : 'Save Record'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
