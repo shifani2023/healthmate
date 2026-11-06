@@ -60,13 +60,10 @@ class _RecordListScreenState extends State<RecordListScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      // Only written to the Terminal for the developer, never shown to the user
+      debugPrint('Could not load records: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Sorry, we could not load the records. Please try again. ($e)'),
-        ),
-      );
     }
   }
 
@@ -122,10 +119,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
         );
         await _loadRecords();
       } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not delete record: $e')),
-        );
+        debugPrint('Could not delete record: $e');
       }
     }
   }

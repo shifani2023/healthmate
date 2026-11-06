@@ -97,9 +97,13 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
       );
       Navigator.pop(context, true);
     } catch (e) {
+      // Technical details go to the Terminal only
+      debugPrint('Could not save record: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save record: $e')),
+        const SnackBar(
+          content: Text('Could not save the record. Please try again.'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);

@@ -54,13 +54,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      // Only written to the Terminal for the developer, never shown to the user
+      debugPrint('Could not load dashboard data: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Sorry, we could not load your data. Please try again. ($e)'),
-        ),
-      );
     }
   }
 
