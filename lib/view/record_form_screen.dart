@@ -6,8 +6,9 @@ import '../widgets/background_image.dart';
 
 class RecordFormScreen extends StatefulWidget {
   final HealthRecord? record;
+  final DateTime? initialDate; // used when adding for a missed day
 
-  const RecordFormScreen({super.key, this.record});
+  const RecordFormScreen({super.key, this.record, this.initialDate});
 
   @override
   State<RecordFormScreen> createState() => _RecordFormScreenState();
@@ -28,9 +29,15 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   void initState() {
     super.initState();
     final record = widget.record;
-    _selectedDate = record == null
-        ? DateTime.now()
-        : DateTime.parse(record.date);
+
+    if (record != null) {
+      _selectedDate = DateTime.parse(record.date);
+    } else if (widget.initialDate != null) {
+      final d = widget.initialDate!;
+      _selectedDate = DateTime(d.year, d.month, d.day);
+    } else {
+      _selectedDate = DateTime.now();
+    }
 
     _stepsController = TextEditingController(
       text: record?.steps.toString() ?? '',

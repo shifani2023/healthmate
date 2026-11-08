@@ -21,8 +21,9 @@ class DatabaseHelper {
     print('DATABASE LOCATION: $path'); // check db path
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDatabase,
+      onUpgrade: _upgradeDatabase,
     );
   }
 
@@ -30,6 +31,18 @@ class DatabaseHelper {
     return '${d.year.toString().padLeft(4, '0')}-'
         '${d.month.toString().padLeft(2, '0')}-'
         '${d.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _createUsersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _createDatabase(Database db, int version) async {
@@ -58,7 +71,19 @@ class DatabaseHelper {
         'water_ml': dummyWater[i],
       });
     }
+
+    await _createUsersTable(db);
   }
+
+  // Runs when an older database (version 1) is opened by this version.
+  Future<void> _upgradeDatabase(
+      Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createUsersTable(db);
+    }
+  }
+
+  // ---------- health_records ----------
 
   Future<int> insertRecord(Map<String, dynamic> row) async {
     final db = await database;
@@ -100,5 +125,24 @@ class DatabaseHelper {
       whereArgs: [date],
       orderBy: 'id DESC',
     );
+  }
+
+  // ---------- users ----------
+
+  Future<int> insertUser(Map<String, dynamic> row) async {
+    final db = await database;
+    return db.insert('users', row);
+  }
+
+  Future<Map<String, dynamic>?> getUserByUsername(String username) async {
+    final db = await database;
+    final rows = await db.query(
+      'users',
+      where: 'username = ? COLLATE NOCASE',
+      whereArgs: [username],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
   }
 }

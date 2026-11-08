@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../controllers/auth_controller.dart';
 import '../controllers/health_controller.dart';
 import '../models/daily_total.dart';
 import '../models/health_record.dart';
 import '../widgets/background_image.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/weekly_chart.dart';
+import 'login_screen.dart';
 import 'record_form_screen.dart';
 import 'record_list_screen.dart';
 
@@ -23,6 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const int waterGoal = 2000;
 
   final _controller = HealthController();
+  final _auth = AuthController();
   List<HealthRecord> _todayRecords = [];
   List<DailyTotal> _week = [];
   int _bestSteps = 0;
@@ -75,6 +78,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       MaterialPageRoute(builder: (_) => const RecordListScreen()),
     );
     await _loadToday();
+  }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      _auth.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   // A coloured message box
@@ -156,6 +189,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: const Icon(Icons.history),
               tooltip: 'History',
             ),
+            IconButton(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout),
+              tooltip: 'Log out',
+            ),
           ],
         ),
         body: _isLoading
@@ -165,6 +203,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
+                    Text(
+                      'Hello, ${AuthController.currentUser ?? 'there'}!',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
                     Text('Today – $todayLabel',
                         style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 12),

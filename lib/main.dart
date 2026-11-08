@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'view/dashboard_screen.dart';
+import 'view/login_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +21,7 @@ class HealthMateApp extends StatelessWidget {
           centerTitle: true,
         ),
       ),
-      home: const DashboardScreen(),
+      home: const LoginScreen(),
     );
   }
 }

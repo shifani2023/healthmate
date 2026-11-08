@@ -33,6 +33,13 @@ class _RecordListScreenState extends State<RecordListScreen> {
     _loadRecords();
   }
 
+  // True when the day is after today (records can't be added for the future)
+  bool _isFutureDay(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return DateTime(d.year, d.month, d.day).isAfter(today);
+  }
+
   // Sort by date, then by id (newest first or oldest first)
   List<HealthRecord> _sorted(List<HealthRecord> list) {
     final copy = List<HealthRecord>.from(list);
@@ -70,6 +77,22 @@ class _RecordListScreenState extends State<RecordListScreen> {
   List<HealthRecord> _recordsForDay(DateTime day) {
     final key = _fmt(day);
     return _allRecords.where((r) => r.date == key).toList();
+  }
+
+  // Add a record for the day that is selected on the calendar (a missed day)
+  Future<void> _addRecordForDay() async {
+    final day = _filterDate;
+    if (day == null) return;
+
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordFormScreen(
+          initialDate: DateTime(day.year, day.month, day.day),
+        ),
+      ),
+    );
+    if (changed == true) await _loadRecords();
   }
 
   Future<void> _editRecord(HealthRecord record) async {
@@ -146,6 +169,34 @@ class _RecordListScreenState extends State<RecordListScreen> {
             PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],
+        ),
+      ),
+    );
+  }
+
+  // The "add record for this day" button (or a note for future days)
+  Widget _addForDaySection() {
+    final day = _filterDate!;
+
+    if (_isFutureDay(day)) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 8),
+        child: Text(
+          "You can't add records for future days.",
+          style: TextStyle(color: Colors.black54),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton.tonalIcon(
+          onPressed: _addRecordForDay,
+          icon: const Icon(Icons.add),
+          label: Text(
+              'Add record for ${DateFormat('dd MMM yyyy').format(day)}'),
         ),
       ),
     );
@@ -240,6 +291,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
                 label: Text(_newestFirst ? 'Newest first' : 'Oldest first'),
               ),
             ),
+            if (_filterDate != null) _addForDaySection(),
             if (_isLoading)
               const Center(
                 child: Padding(
@@ -248,13 +300,16 @@ class _RecordListScreenState extends State<RecordListScreen> {
                 ),
               )
             else if (_records.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Column(
                   children: [
-                    Icon(Icons.event_busy, size: 48, color: Colors.black45),
-                    SizedBox(height: 12),
-                    Text('No health records found.'),
+                    const Icon(Icons.event_busy,
+                        size: 48, color: Colors.black45),
+                    const SizedBox(height: 12),
+                    Text(_filterDate == null
+                        ? 'No health records found.'
+                        : 'No records for this day yet.'),
                   ],
                 ),
               )
