@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -18,7 +19,7 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'healthmate.db');
 
-    print('DATABASE LOCATION: $path'); // check db path
+    debugPrint('DATABASE LOCATION: $path'); // check db path
     return openDatabase(
       path,
       version: 2,
