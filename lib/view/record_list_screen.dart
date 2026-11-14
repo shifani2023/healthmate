@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
-import '../controllers/health_controller.dart';
 import '../models/health_record.dart';
+import '../providers/health_provider.dart';
 import '../widgets/background_image.dart';
 import 'record_detail_screen.dart';
 import 'record_form_screen.dart';
@@ -15,23 +16,11 @@ class RecordListScreen extends StatefulWidget {
 }
 
 class _RecordListScreenState extends State<RecordListScreen> {
-  final _controller = HealthController();
-
-  List<HealthRecord> _allRecords = []; // used for the calendar dots
-  List<HealthRecord> _records = []; // the list shown under the calendar
+  // These only control how this screen looks (calendar and sorting)
   DateTime _focusedDay = DateTime.now();
   DateTime? _filterDate;
   CalendarFormat _format = CalendarFormat.twoWeeks;
   bool _newestFirst = true;
-  bool _isLoading = true;
-
-  String _fmt(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecords();
-  }
 
   // True when the day is after today (records can't be added for the future)
   bool _isFutureDay(DateTime d) {
@@ -51,40 +40,12 @@ class _RecordListScreenState extends State<RecordListScreen> {
     return copy;
   }
 
-  Future<void> _loadRecords() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final all = await _controller.getAllRecords();
-      final shown = _filterDate == null
-          ? all
-          : await _controller.getRecordsByDate(_fmt(_filterDate!));
-
-      if (!mounted) return;
-      setState(() {
-        _allRecords = all;
-        _records = _sorted(shown);
-        _isLoading = false;
-      });
-    } catch (e) {
-      // Only written to the Terminal for the developer, never shown to the user
-      debugPrint('Could not load records: $e');
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-    }
-  }
-
-  List<HealthRecord> _recordsForDay(DateTime day) {
-    final key = _fmt(day);
-    return _allRecords.where((r) => r.date == key).toList();
-  }
-
   // Add a record for the day that is selected on the calendar (a missed day)
   Future<void> _addRecordForDay() async {
     final day = _filterDate;
     if (day == null) return;
 
-    final changed = await Navigator.push<bool>(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => RecordFormScreen(
@@ -92,17 +53,15 @@ class _RecordListScreenState extends State<RecordListScreen> {
         ),
       ),
     );
-    if (changed == true) await _loadRecords();
   }
 
   Future<void> _editRecord(HealthRecord record) async {
-    final changed = await Navigator.push<bool>(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => RecordFormScreen(record: record),
       ),
     );
-    if (changed == true) await _loadRecords();
   }
 
   void _openDetails(HealthRecord record) {
@@ -115,18 +74,20 @@ class _RecordListScreenState extends State<RecordListScreen> {
   }
 
   Future<void> _deleteRecord(HealthRecord record) async {
+    final health = context.read<HealthProvider>();
+
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete record?'),
         content: const Text('This action cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
           ),
         ],
@@ -135,12 +96,11 @@ class _RecordListScreenState extends State<RecordListScreen> {
 
     if (confirm == true && record.id != null) {
       try {
-        await _controller.deleteRecord(record.id!);
+        await health.deleteRecord(record.id!);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Record deleted')),
         );
-        await _loadRecords();
       } catch (e) {
         debugPrint('Could not delete record: $e');
       }
@@ -204,6 +164,15 @@ class _RecordListScreenState extends State<RecordListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // watch = this screen refreshes whenever the shared notebook changes
+    final health = context.watch<HealthProvider>();
+
+    final shown = _sorted(
+      _filterDate == null
+          ? health.records
+          : health.recordsForDate(_filterDate!),
+    );
+
     return BackgroundImage(
       asset: 'images/history.jpg',
       child: Scaffold(
@@ -230,7 +199,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
                 },
                 selectedDayPredicate: (day) =>
                     _filterDate != null && isSameDay(day, _filterDate),
-                eventLoader: _recordsForDay,
+                eventLoader: (day) => health.recordsForDate(day),
                 headerStyle: const HeaderStyle(titleCentered: true),
                 calendarStyle: const CalendarStyle(
                   markerDecoration: BoxDecoration(
@@ -243,7 +212,6 @@ class _RecordListScreenState extends State<RecordListScreen> {
                     _filterDate = selectedDay;
                     _focusedDay = focusedDay;
                   });
-                  _loadRecords();
                 },
                 onFormatChanged: (format) {
                   setState(() => _format = format);
@@ -267,10 +235,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
                   ),
                   if (_filterDate != null)
                     TextButton.icon(
-                      onPressed: () {
-                        setState(() => _filterDate = null);
-                        _loadRecords();
-                      },
+                      onPressed: () => setState(() => _filterDate = null),
                       icon: const Icon(Icons.clear),
                       label: const Text('Show all'),
                     ),
@@ -280,26 +245,22 @@ class _RecordListScreenState extends State<RecordListScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _newestFirst = !_newestFirst;
-                    _records = _sorted(_records);
-                  });
-                },
+                onPressed: () =>
+                    setState(() => _newestFirst = !_newestFirst),
                 icon: Icon(
                     _newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
                 label: Text(_newestFirst ? 'Newest first' : 'Oldest first'),
               ),
             ),
             if (_filterDate != null) _addForDaySection(),
-            if (_isLoading)
+            if (health.isLoading)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: CircularProgressIndicator(),
                 ),
               )
-            else if (_records.isEmpty)
+            else if (shown.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Column(
@@ -314,7 +275,7 @@ class _RecordListScreenState extends State<RecordListScreen> {
                 ),
               )
             else
-              ..._records.map(_recordCard),
+              ...shown.map(_recordCard),
           ],
         ),
       ),

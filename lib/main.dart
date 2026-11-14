@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'providers/health_provider.dart';
 import 'view/login_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const HealthMateApp());
+  runApp(
+    // The shared notebook is created once and given to the whole app
+    ChangeNotifierProvider(
+      create: (_) => HealthProvider()..loadRecords(),
+      child: const HealthMateApp(),
+    ),
+  );
 }
 
 class HealthMateApp extends StatelessWidget {

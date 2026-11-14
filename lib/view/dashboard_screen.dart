@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../controllers/auth_controller.dart';
-import '../controllers/health_controller.dart';
-import '../models/daily_total.dart';
-import '../models/health_record.dart';
+import '../providers/health_provider.dart';
 import '../widgets/background_image.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/weekly_chart.dart';
@@ -11,97 +10,49 @@ import 'login_screen.dart';
 import 'record_form_screen.dart';
 import 'record_list_screen.dart';
 
-class DashboardScreen extends StatefulWidget {
+class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
-  @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
-}
-
-class _DashboardScreenState extends State<DashboardScreen> {
   // Daily goals (set by the user, not medical advice)
   static const int stepsGoal = 10000;
   static const int caloriesGoal = 500;
   static const int waterGoal = 2000;
 
-  final _controller = HealthController();
-  final _auth = AuthController();
-  List<HealthRecord> _todayRecords = [];
-  List<DailyTotal> _week = [];
-  int _bestSteps = 0;
-  bool _isLoading = true;
-
-  int get _steps =>
-      _todayRecords.fold(0, (sum, item) => sum + item.steps);
-  int get _calories =>
-      _todayRecords.fold(0, (sum, item) => sum + item.calories);
-  int get _water =>
-      _todayRecords.fold(0, (sum, item) => sum + item.waterMl);
-
-  @override
-  void initState() {
-    super.initState();
-    _loadToday();
-  }
-
-  Future<void> _loadToday() async {
-    try {
-      final records = await _controller.getTodayRecords();
-      final week = await _controller.getWeekTotals();
-      final best = await _controller.getBestDaySteps();
-      if (!mounted) return;
-      setState(() {
-        _todayRecords = records;
-        _week = week;
-        _bestSteps = best;
-        _isLoading = false;
-      });
-    } catch (e) {
-      // Only written to the Terminal for the developer, never shown to the user
-      debugPrint('Could not load dashboard data: $e');
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _openAddForm() async {
-    final changed = await Navigator.push<bool>(
+  Future<void> _openAddForm(BuildContext context) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const RecordFormScreen()),
     );
-    if (changed == true) await _loadToday();
   }
 
-  Future<void> _openHistory() async {
+  Future<void> _openHistory(BuildContext context) async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const RecordListScreen()),
     );
-    await _loadToday();
   }
 
-  Future<void> _logout() async {
+  Future<void> _logout(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Log out?'),
         content: const Text('Are you sure you want to log out?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Log out'),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      _auth.logout();
-      if (!mounted) return;
+    if (confirm == true && context.mounted) {
+      AuthController().logout();
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -131,24 +82,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Encouraging messages
-  List<Widget> _buildMessages() {
+  List<Widget> _buildMessages(int steps, int water) {
     final List<Widget> messages = [];
 
-    if (_water == 0) {
+    if (water == 0) {
       messages.add(_messageBox(
         Icons.water_drop,
         "You haven't added any water today. Drink a glass of water now – your body will thank you!",
         Colors.blue,
       ));
     }
-    if (_steps == 0) {
+    if (steps == 0) {
       messages.add(_messageBox(
         Icons.directions_walk,
         'No steps recorded today. A short walk will make you feel great!',
         Colors.green,
       ));
     }
-    if (_water >= waterGoal && _steps >= stepsGoal) {
+    if (water >= waterGoal && steps >= stepsGoal) {
       messages.add(_messageBox(
         Icons.celebration,
         'Amazing! You reached your water and steps goals today!',
@@ -159,19 +110,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // High score banner
-  Widget _highScore() {
-    final isNewBest = _steps > 0 && _steps >= _bestSteps;
+  Widget _highScore(int steps, int bestSteps) {
+    final isNewBest = steps > 0 && steps >= bestSteps;
     return _messageBox(
       Icons.emoji_events,
       isNewBest
-          ? 'New high score! $_steps steps is your best day ever!'
-          : 'Your high score: $_bestSteps steps in one day',
+          ? 'New high score! $steps steps is your best day ever!'
+          : 'Your high score: $bestSteps steps in one day',
       Colors.amber.shade800,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // watch = this screen refreshes whenever the shared notebook changes
+    final health = context.watch<HealthProvider>();
+
+    final steps = health.todaySteps;
+    final calories = health.todayCalories;
+    final water = health.todayWater;
     final todayLabel = DateFormat('dd MMMM yyyy').format(DateTime.now());
 
     return BackgroundImage(
@@ -185,21 +142,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
           title: const Text('HealthMate'),
           actions: [
             IconButton(
-              onPressed: _openHistory,
+              onPressed: () => _openHistory(context),
               icon: const Icon(Icons.history),
               tooltip: 'History',
             ),
             IconButton(
-              onPressed: _logout,
+              onPressed: () => _logout(context),
               icon: const Icon(Icons.logout),
               tooltip: 'Log out',
             ),
           ],
         ),
-        body: _isLoading
+        body: health.isLoading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-                onRefresh: _loadToday,
+                onRefresh: () => context.read<HealthProvider>().loadRecords(),
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
@@ -211,37 +168,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text('Today – $todayLabel',
                         style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 12),
-                    ..._buildMessages(),
+                    ..._buildMessages(steps, water),
                     MetricCard(
                       title: 'Steps walked',
-                      value: _steps.toString(),
+                      value: steps.toString(),
                       unit: 'steps',
                       icon: Icons.directions_walk,
                       color: Colors.green,
                       goal: stepsGoal,
-                      current: _steps,
+                      current: steps,
                     ),
                     MetricCard(
                       title: 'Calories burned',
-                      value: _calories.toString(),
+                      value: calories.toString(),
                       unit: 'kcal',
                       icon: Icons.local_fire_department,
                       color: Colors.red,
                       goal: caloriesGoal,
-                      current: _calories,
+                      current: calories,
                     ),
                     MetricCard(
                       title: 'Water intake',
-                      value: _water.toString(),
+                      value: water.toString(),
                       unit: 'ml',
                       icon: Icons.water_drop,
                       color: Colors.blue,
                       goal: waterGoal,
-                      current: _water,
+                      current: water,
                     ),
                     const SizedBox(height: 8),
-                    _highScore(),
-                    WeeklyChart(days: _week),
+                    _highScore(steps, health.bestDaySteps),
+                    WeeklyChart(days: health.weekTotals),
                     const SizedBox(height: 12),
                     const Text(
                       'Goals are set by you and are not medical advice.',
@@ -250,12 +207,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
-                      onPressed: _openAddForm,
+                      onPressed: () => _openAddForm(context),
                       icon: const Icon(Icons.add),
                       label: const Text('Add Health Record'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _openHistory,
+                      onPressed: () => _openHistory(context),
                       icon: const Icon(Icons.calendar_month),
                       label: const Text('View Previous Records'),
                     ),

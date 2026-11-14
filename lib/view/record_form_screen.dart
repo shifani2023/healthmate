@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../controllers/health_controller.dart';
+import 'package:provider/provider.dart';
 import '../models/health_record.dart';
+import '../providers/health_provider.dart';
 import '../widgets/background_image.dart';
 
 class RecordFormScreen extends StatefulWidget {
@@ -16,7 +17,6 @@ class RecordFormScreen extends StatefulWidget {
 
 class _RecordFormScreenState extends State<RecordFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _controller = HealthController();
 
   late final TextEditingController _stepsController;
   late final TextEditingController _caloriesController;
@@ -75,6 +75,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
   Future<void> _saveRecord() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // read = just use the shared notebook (no need to refresh this screen)
+    final health = context.read<HealthProvider>();
+
     setState(() => _isSaving = true);
 
     final isEditing = widget.record != null;
@@ -89,9 +92,9 @@ class _RecordFormScreenState extends State<RecordFormScreen> {
 
     try {
       if (isEditing) {
-        await _controller.updateRecord(record);
+        await health.updateRecord(record);
       } else {
-        await _controller.addRecord(record);
+        await health.addRecord(record);
       }
 
       if (!mounted) return;
